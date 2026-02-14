@@ -1,74 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Driver Check</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f5f7fa;
-      padding: 30px;
-    }
+<meta charset="UTF-8" />
+<title>Driver Check</title>
 
-    h1 {
-      text-align: center;
-    }
-
-    .container {
-      max-width: 700px;
-      margin: auto;
-      background: #ffffff;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-
-    video {
-      width: 100%;
-      height: 380px;
-      background: black;
-      border-radius: 6px;
-    }
-
-    .controls {
-      text-align: center;
-      margin-top: 15px;
-    }
-
-    button {
-      padding: 10px 18px;
-      margin: 8px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .transcript {
-      margin-top: 15px;
-      padding: 12px;
-      background: #f0f0f0;
-      min-height: 60px;
-      border-radius: 4px;
-    }
-
-    .error {
-      color: red;
-      margin-top: 10px;
-      text-align: center;
-    }
-
-    .success {
-      color: green;
-      margin-top: 10px;
-      text-align: center;
-    }
-  </style>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f5f7fa;
+  padding: 30px;
+}
+.container {
+  max-width: 700px;
+  margin: auto;
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+video {
+  width: 100%;
+  height: 380px;
+  background: black;
+  border-radius: 6px;
+}
+.controls {
+  text-align: center;
+  margin-top: 15px;
+}
+button {
+  padding: 10px 18px;
+  margin: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.transcript {
+  margin-top: 15px;
+  padding: 12px;
+  background: #f0f0f0;
+  min-height: 60px;
+  border-radius: 4px;
+}
+.error { color: red; text-align: center; margin-top: 10px; }
+.success { color: green; text-align: center; margin-top: 10px; }
+</style>
 </head>
+
 <body>
 
 <div class="container">
-  <h1>Driver Check</h1>
+  <h2 style="text-align:center;">Driver Check</h2>
 
-  <video id="video" autoplay muted></video>
+  <video id="video" autoplay muted playsinline></video>
 
   <div class="controls">
     <button id="startBtn">Start</button>
@@ -87,30 +70,35 @@
 </div>
 
 <script>
-  const video = document.getElementById("video");
-  const startBtn = document.getElementById("startBtn");
-  const submitBtn = document.getElementById("submitBtn");
-  const nextBtn = document.getElementById("nextBtn");
-  const moveNextBtn = document.getElementById("moveNextBtn");
-  const transcriptDiv = document.getElementById("text");
-  const errorDiv = document.getElementById("error");
-  const successDiv = document.getElementById("success");
+const video = document.getElementById("video");
+const startBtn = document.getElementById("startBtn");
+const submitBtn = document.getElementById("submitBtn");
+const nextBtn = document.getElementById("nextBtn");
+const moveNextBtn = document.getElementById("moveNextBtn");
+const transcriptDiv = document.getElementById("text");
+const errorDiv = document.getElementById("error");
+const successDiv = document.getElementById("success");
 
-  let recognition;
-  let finalTranscript = "";
-  let mediaRecorder;
-  let recordedChunks = [];
-  let recordedBlob;
+let recognition;
+let finalTranscript = "";
+let mediaRecorder;
+let recordedChunks = [];
+let recordedBlob;
+let stream;
 
-  async function startDriverCheck() {
-    errorDiv.textContent = "";
-    successDiv.textContent = "";
-    transcriptDiv.textContent = "";
-    finalTranscript = "";
-    recordedChunks = [];
-    moveNextBtn.style.display = "none";
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    const stream = await navigator.mediaDevices.getUserMedia({
+if (!SpeechRecognition) {
+  errorDiv.textContent =
+    "Speech Recognition is not supported in this browser (Safari/Firefox need backend STT).";
+}
+
+async function startDriverCheck() {
+  resetState();
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true
     });
@@ -119,83 +107,122 @@
     video.muted = true;
 
     mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+    recordedChunks = [];
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
     mediaRecorder.onstop = () => {
       recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
     };
+
     mediaRecorder.start();
 
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
 
-    if (!SpeechRecognition) {
-      errorDiv.textContent =
-        "Speech Recognition is not supported in this browser.";
-      return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += text + " ";
-        } else {
-          interim += text;
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += text + " ";
+          } else {
+            interim += text;
+          }
         }
-      }
-      transcriptDiv.textContent = finalTranscript + interim;
-    };
+        transcriptDiv.textContent = finalTranscript + interim;
+      };
 
-    recognition.start();
-    submitBtn.disabled = false;
-  }
-
-  function validateTranscript() {
-    errorDiv.textContent = "";
-    successDiv.textContent = "";
-
-    recognition && recognition.stop();
-    mediaRecorder && mediaRecorder.stop();
-
-    const raw = finalTranscript || "";
-    const cleaned = raw.replace(/[^a-zA-Z0-9]/g, "");
-
-    if (cleaned.length >= 5) {
-      successDiv.textContent = "Audio check passed ✅";
-      nextBtn.disabled = false;
-    } else {
-      errorDiv.textContent =
-        "Audio check failed ❌ Please ensure your voice is captured clearly.";
-      nextBtn.disabled = true;
+      recognition.start();
     }
+
+    submitBtn.disabled = false;
+
+  } catch (err) {
+    errorDiv.textContent = "Camera/Microphone permission denied.";
   }
+}
 
-  function replayVideo() {
-    if (!recordedBlob) return;
+function validateTranscript() {
+  errorDiv.textContent = "";
+  successDiv.textContent = "";
+  submitBtn.disabled = true;
 
-    const url = URL.createObjectURL(recordedBlob);
-    video.srcObject = null;
-    video.src = url;
-    video.muted = false;
-    video.controls = true;
-    video.play();
-
-    video.onended = () => {
-      moveNextBtn.style.display = "inline-block";
+  if (recognition) {
+    recognition.onend = () => {
+      performValidation();
     };
+    recognition.stop();
+  } else {
+    performValidation();
   }
 
-  startBtn.addEventListener("click", startDriverCheck);
-  submitBtn.addEventListener("click", validateTranscript);
-  nextBtn.addEventListener("click", replayVideo);
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+
+  stopTracks();
+}
+
+function performValidation() {
+  const cleaned = finalTranscript.replace(/[^a-zA-Z0-9]/g, "");
+
+  if (cleaned.length >= 5) {
+    successDiv.textContent = "Audio check passed ✅";
+    nextBtn.disabled = false;
+  } else {
+    errorDiv.textContent =
+      "Audio check failed ❌ Please ensure your voice is captured clearly.";
+    nextBtn.disabled = true;
+  }
+}
+
+function replayVideo() {
+  if (!recordedBlob) return;
+
+  const url = URL.createObjectURL(recordedBlob);
+
+  video.srcObject = null;
+  video.src = url;
+  video.muted = false;
+  video.controls = true;
+  video.play();
+
+  video.onended = () => {
+    moveNextBtn.style.display = "inline-block";
+  };
+}
+
+function resetState() {
+  finalTranscript = "";
+  transcriptDiv.textContent = "";
+  errorDiv.textContent = "";
+  successDiv.textContent = "";
+  nextBtn.disabled = true;
+  moveNextBtn.style.display = "none";
+}
+
+function stopTracks() {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+}
+
+function moveNext() {
+  alert("Moving to next step...");
+  // window.location.href = "next-page.html";
+}
+
+startBtn.addEventListener("click", startDriverCheck);
+submitBtn.addEventListener("click", validateTranscript);
+nextBtn.addEventListener("click", replayVideo);
+moveNextBtn.addEventListener("click", moveNext);
 </script>
 
 </body>
 </html>
-
